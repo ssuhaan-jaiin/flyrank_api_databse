@@ -78,28 +78,46 @@ def create_task(new_task: TaskCreate):
 
 @app.put("/tasks/{task_id}", summary="Update a task")
 def update_task(task_id: int, updates: TaskUpdate):
-    for task in tasks:
-        if task["id"] == task_id:
-            if updates.title is not None:
-                # client wants to change the title
-                if not updates.title.strip():
-                    return JSONResponse(status_code=400, content={"error": "Title cannot be empty"})
-                task["title"] = updates.title
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
 
-            if updates.done is not None:
-                # client wants to change the done flag
-                task["done"] = updates.done
+    if row is None:
+        conn.close()
+        return JSONResponse(status_code=404, content={"error": "Task not found"})
 
-            return task  # 200 by default, updated task
+    new_title = row["title"]
+    new_done = row["done"]
 
-    return JSONResponse(status_code=404, content={"error": f"Task {task_id} not found"})
+    if updates.title is not None:
+        if not updates.title.strip():
+            conn.close()
+            return JSONResponse(status_code=400, content={"error": "Title cannot be empty"})
+        new_title = updates.title
+
+    if updates.done is not None:
+        new_done = int(updates.done)
+
+    conn.execute(
+        "UPDATE tasks SET title = ?, done = ? WHERE id = ?",
+        (new_title, new_done, task_id)
+    )
+    conn.commit()
+    conn.close()
+
+    return {"id": task_id, "title": new_title, "done": bool(new_done)}
 
 
 @app.delete("/tasks/{task_id}", summary="Delete a task")
 def delete_task(task_id: int):
-    for task in tasks:
-        if task["id"] == task_id:
-            tasks.remove(task)  # actually remove it from the list
-            return JSONResponse(status_code=204, content=None)  # success, empty body
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
 
-    return JSONResponse(status_code=404, content={"error": f"Task {task_id} not found"})
+    if row is None:
+        conn.close()
+        return JSONResponse(status_code=404, content={"error": "Task not found"})
+
+    conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+    conn.commit()
+    conn.close()
+
+    return JSONResponse(status_code=204, content=None)
