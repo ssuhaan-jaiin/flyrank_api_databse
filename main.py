@@ -57,16 +57,23 @@ def get_task(task_id: int):
 
 @app.post("/tasks", summary="Create a task")
 def create_task(new_task: TaskCreate):
-    # new_task is parsed from the request body automatically
     if not new_task.title.strip():
-        # empty or whitespace-only title is rejected
         return JSONResponse(status_code=400, content={"error": "Title is required"})
 
-    # next free id = current highest id + 1 (0 if list is empty)
-    next_id = max((task["id"] for task in tasks), default=0) + 1
-    task = {"id": next_id, "title": new_task.title, "done": False}
-    tasks.append(task)  # mutate the in-memory list
-    return JSONResponse(status_code=201, content=task)
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO tasks (title, done) VALUES (?, ?)",
+        (new_task.title, 0)
+    )
+    conn.commit()
+    new_id = cursor.lastrowid
+    conn.close()
+
+    return JSONResponse(
+        status_code=201,
+        content={"id": new_id, "title": new_task.title, "done": False}
+    )
 
 
 @app.put("/tasks/{task_id}", summary="Update a task")
