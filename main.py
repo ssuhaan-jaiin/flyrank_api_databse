@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
-from database import init_db
+from database import init_db, get_connection 
 
 init_db()
 
@@ -35,20 +35,24 @@ def health_check():
     return {"status": "ok"}
 
 
-@app.get("/tasks", summary="List all tasks")
+@app.get("/tasks")
 def get_tasks():
-    # returns the whole list, no filtering
-    return tasks
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM tasks").fetchall()
+    conn.close()
+    return [{"id": row["id"], "title": row["title"], "done": bool(row["done"])} for row in rows]
 
 
-@app.get("/tasks/{task_id}", summary="Get a single task")
+@app.get("/tasks/{task_id}")
 def get_task(task_id: int):
-    # task_id comes from the URL, auto-converted to int
-    for task in tasks:
-        if task["id"] == task_id:
-            return task  # 200 by default
-    # no match found in the loop
-    return JSONResponse(status_code=404, content={"error": f"Task {task_id} not found"})
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    conn.close()
+
+    if row is None:
+        return JSONResponse(status_code=404, content={"error": "Task not found"})
+
+    return {"id": row["id"], "title": row["title"], "done": bool(row["done"])}
 
 
 @app.post("/tasks", summary="Create a task")
